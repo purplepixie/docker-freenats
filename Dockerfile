@@ -1,111 +1,49 @@
-FROM centos:centos6.6
-MAINTAINER David Cutting <dcutting@purplepixie.org>
+FROM ubuntu:22.04
 
-# Setup the LAMP Environment and Ancilliary
-RUN yum -y install bash tar wget httpd httpd-tools php php-cli php-gd php-imap php-xml php-soap php-mysql mysql-server mysql unzip cronie
-RUN chkconfig httpd on
-RUN chkconfig mysqld on
-RUN chkconfig crond on
-RUN service httpd start
-RUN service mysqld start
-RUN service crond start
+LABEL author="David Cutting"
+LABEL package="FreeNATS"
+LABEL url="http://www.purplepixie.org/freenats/"
 
-# Setup FreeNATS
-RUN mkdir /tmp/nats-install
-RUN cd /tmp/nats-install; wget --trust-server-names http://www.purplepixie.org/freenats/downloads/docker/docker-nats-setup-centos66.zip; unzip docker-nats-setup-centos66.zip
-RUN cd /tmp/nats-install/docker-nats-setup-centos66
-# RUN chmod 755 setup.sh; ./setup.sh
+# Update packages
+RUN apt update 
+RUN apt upgrade -y
 
-# Setup FreeNATS Inside a Docker Container/Image on Build
-# For: CentOS 6.6 Docker Image
+# Install Required Software
+RUN apt install -y mysql-server
+RUN apt install -y apache2
+RUN apt install -y cron
+RUN apt install -y wget
+# TZData Fix (avoids interactive prompt), UTC by default
+RUN DEBIAN_FRONTEND=noninteractive apt-get install -y tzdata
+# Required PHP Libraries
+RUN apt install -y libapache2-mod-php php-mysql php-imap php-xml php-gd
 
-# Base: /opt/freenats/server/base
-# Bin:  /opt/freenats/server/bin
-# Web:  /srv/www/html
-
-# Apache Config
-
-RUN cp /etc/httpd/conf/httpd.conf /etc/httpd/conf/httpd.conf.original
-RUN cp -Rf /tmp/nats-install/docker-nats-setup-centos66/etc/httpd/conf/httpd.conf /etc/httpd/conf/
-
-RUN service httpd stop
-RUN mkdir -p /srv/www/html
-RUN service httpd start
-
-# Cron Config
-
-RUN mkdir -p /etc/cron.minute
-RUN cp /tmp/nats-install/docker-nats-setup-centos66/etc/cron.minute/freenats-tester /etc/cron.minute/freenats-tester
-RUN chmod 755 /etc/cron.minute/freenats-tester
-RUN mkdir -p /etc/cron.daily
-RUN cp /tmp/nats-install/docker-nats-setup-centos66/etc/cron.daily/freenats-cleanup /etc/cron.daily/freenats-cleanup
-RUN chmod 755 /etc/cron.daily/freenats-cleanup
-
+# FreeNATS Setup and Install
+ADD scripts ./scripts
+# Install FreeNATS Script
+RUN chmod +x scripts/install-freenats.sh
+RUN scripts/install-freenats.sh
+RUN ln -s /opt/freenats/server/base /var/www/base
+RUN rm /etc/apache2/mods-available/alias.conf
+# MySQL Setup
+RUN service mysql restart \
+ && mysql < scripts/fix-root-password.sql \
+ && echo "CREATE DATABASE freenats" | mysql \
+ && mysql freenats < /opt/freenats/server/base/sql/schema.sql \
+ && mysql freenats < /opt/freenats/server/base/sql/default.sql
+# CRON Setup
+RUN mkdir /etc/cron.minute
 RUN echo "* * * * * root run-parts /etc/cron.minute" >> /etc/crontab
+RUN cp /scripts/freenats-tester /etc/cron.minute/
+RUN cp /scripts/freenats-cleanup /etc/cron.daily/
+RUN chmod +x /etc/cron.minute/freenats-tester
+RUN chmod +x /etc/cron.daily/freenats-cleanup
 
-RUN service crond stop
-RUN service crond start
-
-## DB + User
-
-RUN service mysqld restart \
- && /usr/bin/mysqladmin -u root password '' \
- && mysql -u root < /tmp/nats-install/docker-nats-setup-centos66/db-setup.sql
-
-## Configuration
-
-# Copy Ancilliary Files
-# + Run
-# + Upgrade
-
-RUN mkdir -p /root/freenats \
- && cp /tmp/nats-install/docker-nats-setup-centos66/root/freenats/upgrade /root/freenats/ \
- && chmod 755 /root/freenats/upgrade \
- && cp /tmp/nats-install/docker-nats-setup-centos66/root/freenats.sh /root/freenats/ \
- && chmod 755 /root/freenats/freenats.sh
-
-# Download FreeNATS
-
-RUN mkdir -p /tmp/freenats
-RUN cd /tmp/freenats \
-  && wget --trust-server-names http://www.purplepixie.org/freenats/download.php?DirectCurrent=docker66 -P /tmp/freenats \
-  && VS=`ls /tmp/freenats/ | awk 'BEGIN { FS="-" } ; { print $2 }'` \
-  && VLEN=${#VS}-7 \
-  && VERS=${VS:0:${VLEN}} \
-  && FILE=freenats-$VERS \
-  && tar -xvzf /tmp/freenats/$FILE.tar.gz \
-  && mv /tmp/freenats/$FILE /tmp/freenats/freenats-install
-
-# Install FreeNATS
-
-## Files
-
-RUN mkdir -p /opt/freenats \
- && mkdir -p /opt/freenats/server \
- && mkdir -p /opt/freenats/server/base \
- && mkdir -p /opt/freenats/server/bin \
- && cp -Rf /tmp/freenats/freenats-install/server/base/* /opt/freenats/server/base/ \
- && cp -Rf /tmp/freenats/freenats-install/server/bin/* /opt/freenats/server/bin/ \
- && cp -Rf /tmp/freenats/freenats-install/server/web/* /srv/www/html/ \
- && echo "<?php" > /srv/www/html/include.php \
- && echo "\$BaseDir=\"/opt/freenats/server/base/\";" >> /srv/www/html/include.php \
- && echo "require(\$BaseDir.\"nats.php\");" >> /srv/www/html/include.php
-
-## DB Schema
-
-RUN service mysqld restart \
- && mysql -u root freenats < /tmp/freenats/freenats-install/server/base/sql/schema.drop.sql \
- && mysql -u root freenats < /tmp/freenats/freenats-install/server/base/sql/default.sql \
- && mv /srv/www/html/firstrun.php /srv/www/html/firstrun-.php
-
-
-
-# Expose the web server port
+# Expose HTTP
 EXPOSE 80
 
-# Start the command sequence
-# USER apache
-CMD service mysqld restart \
- && service httpd restart \
- && service crond restart \
- && /root/freenats/freenats.sh 
+# Runtime
+CMD service mysql restart \
+ && service apache2 restart \
+ && service cron restart \
+ && tail -f /var/log/apache2/error.log
