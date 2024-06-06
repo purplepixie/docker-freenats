@@ -1,12 +1,19 @@
 #!/bin/bash
 ## Install FreeNATS from Download
 
-# Latest Stable
-#URL="https://www.purplepixie.org/freenats/download.php?DirectCurrent=1"
+# Latest Stable - this is the default
+DEFURL="https://www.purplepixie.org/freenats/download.php?DirectCurrent=1"
 
-# Specific Version
-SPECVERSION="1.30.13a"
-URL="https://www.purplepixie.org/freenats/downloads/freenats-${SPECVERSION}.tar.gz"
+# Specific Version if env VERSION is set
+
+# Can set manually for testing
+# VERSION="1.30.13a"
+
+if [ -z "$VERSION" ]; then
+    URL=${DEFURL}
+else
+    URL="https://www.purplepixie.org/freenats/downloads/freenats-${VERSION}.tar.gz"
+fi
 
 WD="/tmp"
 
@@ -16,6 +23,11 @@ rm -Rf freenat*
 echo "Downloading FreeNATS via ${URL}"
 
 wget --content-disposition ${URL}
+RES=$?
+if [ $RES -ne 0 ]; then
+    echo "Download failed... FATAL ERROR"
+    exit 1
+fi
 
 TARBALL=$(ls freenats*.tar.gz)
 

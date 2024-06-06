@@ -20,9 +20,12 @@ RUN apt install -y libapache2-mod-php php-mysql php-imap php-xml php-gd
 
 # FreeNATS Setup and Install
 ADD scripts ./scripts
+ARG VERSION=
+ENV VERSION=${VERSION}
 # Install FreeNATS Script
 RUN chmod +x scripts/install-freenats.sh
 RUN scripts/install-freenats.sh
+RUN chmod +x scripts/upgrade-freenats.sh
 RUN ln -s /opt/freenats/server/base /var/www/base
 RUN rm /etc/apache2/mods-available/alias.conf
 # MySQL Setup
