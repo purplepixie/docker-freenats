@@ -23,3 +23,9 @@ docker build --build-arg VERSION=1.30.13a -t purplepixie/freenats .
 ```
 
 Would build the container with the specific version 1.30.13a. Note if the download does not exist then the build process will fail.
+
+Note that the default distribution should be ```linux/amd64``` format so on an ARM (i.e. Apple Mx) the build should include a ```--platform``` flag:
+
+```
+docker build --platform linux/amd64 -t purplepixie/freenats .
+```
