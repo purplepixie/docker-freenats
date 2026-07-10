@@ -1,5 +1,5 @@
 #!/bin/bash
-## Upgrade FreeNATS from Download to Install
+## Upgrade FreeNATS from Download to Install -- UNDER DEVELOPMENT / NOT WORKING
 
 echo "*** Upgrade FreeNATS Inside Docker Container ***"
 
