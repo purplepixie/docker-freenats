@@ -42,11 +42,15 @@ RUN cp /scripts/freenats-cleanup /etc/cron.daily/
 RUN chmod +x /etc/cron.minute/freenats-tester
 RUN chmod +x /etc/cron.daily/freenats-cleanup
 
+# Copy config base files over for DB dynamic loading
+ADD config /config
+
 # Expose HTTP
 EXPOSE 80
 
 # Runtime
-CMD service mysql restart \
+CMD bash /scripts/database-startup.sh \
+ && service mysql restart \
  && service apache2 restart \
  && service cron restart \
  && tail -f /var/log/apache2/error.log
